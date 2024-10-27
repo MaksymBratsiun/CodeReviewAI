@@ -7,13 +7,13 @@ import requests
 from openai import OpenAI
 
 from schemas import ReviewRequest
-from services import repo_url_to_git_api_url, get_all_files
+from services import repo_url_to_git_api_url, get_all_files, result_dividing
 
 BRANCH = "main"
 GPT_MODEL = "gpt-4-turbo"
 MAX_TOKEN = 300
 MAX_TOKEN_SUMMARY = 500
-TEMPERATURE = 0.7
+TEMPERATURE = 0.6
 SYS_CONTENT = ""
 
 
@@ -114,7 +114,7 @@ async def review(request: ReviewRequest):
                 {"role": "user",
                  "content": (f"Make summary review according preview analyze: {analysis_results}"
                              f"Downsides: identifying weaknesses and issues and good solutions in 3 sentences."
-                             f"Rating: (from 1 to 5, like 3/5) for {dev_level} level."
+                             f"Rating: (from 1 to 5) for {dev_level} level."
                              f"Conclusion: write a brief comment on the developer’s skills in 1 sentence."
                              )}
             ],
@@ -125,4 +125,6 @@ async def review(request: ReviewRequest):
     except Exception as e:
         summary_result = {"error": str(e)}
 
-    return [project_structure, summary_result]
+    result = result_dividing(summary_result)
+    result.update({"project_structure": project_structure})
+    return result

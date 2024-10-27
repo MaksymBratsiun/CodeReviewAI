@@ -34,3 +34,22 @@ def get_all_files(git_response: requests.Response) -> dict:
     read_files(git_response.json())
 
     return files_to_analyze
+
+
+def result_dividing(input_string : str) -> dict:
+    res = input_string.replace("\n", "").replace("#", " ").replace("*", " ").strip()
+    split_result_rating = res.split("Rating")
+    comments, split_result = split_result_rating[0].strip(), split_result_rating[1:]
+    split_result_level = split_result[0].split("level")
+    rating, split_result = split_result_level[0].strip(), split_result_level[1:]
+
+    for i in rating:
+        if i.isdigit():
+            rating = i
+            break
+
+    split_result_conclusion = split_result[0].split("Conclusion")
+    split_result, conclusion = split_result_conclusion[0].strip(), split_result_conclusion[1:][0]
+    comments = f"{comments} {split_result}"
+
+    return {"comments": comments, "rating": rating, "conclusion": conclusion}
