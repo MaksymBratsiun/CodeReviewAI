@@ -1,3 +1,5 @@
+import re
+
 import requests
 
 GITHUB_ROOT = "https://github.com/"
@@ -36,20 +38,36 @@ def get_all_files(git_response: requests.Response) -> dict:
     return files_to_analyze
 
 
-def result_dividing(input_string : str) -> dict:
+def result_dividing(input_string: str) -> dict:
+    comments = None
+    rating = 0
+    conclusion = None
     res = input_string.replace("\n", "").replace("#", " ").replace("*", " ").strip()
-    split_result_rating = res.split("Rating")
-    comments, split_result = split_result_rating[0].strip(), split_result_rating[1:]
-    split_result_level = split_result[0].split("level")
-    rating, split_result = split_result_level[0].strip(), split_result_level[1:]
 
-    for i in rating:
-        if i.isdigit():
-            rating = i
-            break
-
-    split_result_conclusion = split_result[0].split("Conclusion")
-    split_result, conclusion = split_result_conclusion[0].strip(), split_result_conclusion[1:][0]
-    comments = f"{comments} {split_result}"
+    if res.find("Conclusion") != -1:
+        split_result_conclusion = input_string.split("Conclusion")
+        comments, conclusion = split_result_conclusion[0], "".join(split_result_conclusion[1:])
+        if comments.find("Rating") != 0:
+            pattern = rf"{'Rating'}\D*(\d)"
+            match = re.search(pattern, comments)
+            if match:
+                rating = match.group(1)
+            else:
+                rating = 0
+        else:
+            pattern = rf"{'Rating'}\D*(\d)"
+            match = re.search(pattern, conclusion)
+            if match:
+                rating = match.group(1)
+            else:
+                rating = 0
+    else:
+        comments = input_string
+        pattern = rf"{'Rating'}\D*(\d)"
+        match = re.search(pattern, comments)
+        if match:
+            rating = match.group(1)
+        else:
+            rating = 0
 
     return {"comments": comments, "rating": rating, "conclusion": conclusion}

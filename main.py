@@ -127,4 +127,4 @@ async def review(request: ReviewRequest):
 
     result = result_dividing(summary_result)
     result.update({"project_structure": project_structure})
-    return result
+    return json.dumps(result)
