@@ -1,130 +1,85 @@
 import os
 import json
+import time
 
+import openai
+import httpx
+import asyncio
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-import requests
-from openai import OpenAI
+
 
 from schemas import ReviewRequest
-from services import repo_url_to_git_api_url, get_all_files, result_dividing
+from services import repo_url_to_git_api_url, get_all_files
+from services import analyze_summary, analyze_structure, analyze_file_content, analyze_reduce
 
 BRANCH = "main"
-GPT_MODEL = "gpt-4-turbo"
+GPT_MODEL = "gpt-3.5-turbo"
 MAX_TOKEN = 300
 MAX_TOKEN_SUMMARY = 500
 TEMPERATURE = 0.6
-SYS_CONTENT = ""
+BATCH_SIZE = 7
 
 
 load_dotenv()
-
+openai.api_key = os.environ.get('OPENAI_API_KEY')
 app = FastAPI()
 
 
 @app.post("/review")
-async def review(request: ReviewRequest):
-
+async def review(request: ReviewRequest) -> str:  # json dump
+    print("Run Main")
+    start = time.time()
     git_api_url = repo_url_to_git_api_url(request.git_url)
 
     if not git_api_url:
         raise HTTPException(status_code=404, detail="Incorrect repository url")
 
-    response = requests.get(git_api_url, params={"ref": "main"})
-
-    if response.status_code != 200:
-        raise HTTPException(status_code=404, detail="Repository not found or could not be accessed")
-
-    files_to_analyze = get_all_files(response)
-
     dev_level = request.dev_level
-    project_structure = list(files_to_analyze)
     description = request.description
-
     analysis_results = []
-    client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
 
     try:
-        response = client.chat.completions.create(
-            model=GPT_MODEL,
-            messages=[
-                {"role": "system",
-                 "content": f"You are an experienced software reviewer. Evaluate the code according: {description}"
-                 },
-                {"role": "user",
-                 "content": (f"{project_structure} is project structure."
-                             f"Identifying weaknesses and issues and good solutions in 3 sentences."
-                             f"Make conclusion in 1 sentences."
-                             )}
-            ],
-            max_tokens=MAX_TOKEN,
-            temperature=TEMPERATURE
-        )
-        analysis_results.append(response.choices[0].message.content.strip())
+        async with httpx.AsyncClient() as client:
+            files = await get_all_files(git_api_url, client)
+            if not files:
+                raise HTTPException(status_code=404, detail="Repository or branch not found")
+
+            results_structure = analyze_structure(files, description)
+            print("Structure analyze done", results_structure)
+            cleaned_files = {file_path: content for file_path, content in files.items() if content is not None}
+            analysis_tasks = [analyze_file_content(name, content, dev_level, description)
+                              for name, content in cleaned_files.items()]
+            print("File analyze done. Files:", len(cleaned_files.keys()))
+            analysis_results = await asyncio.gather(*analysis_tasks)
+
+        if len(analysis_results) == 0:
+            analysis_results = "No file content to analyze."
+        elif len(analysis_results) <= 7:
+            print("Summary starts, batch less 7")
+            analysis_results = await analyze_summary(analysis_results, results_structure, dev_level, description)
+        else:
+            print("Summary starts, batch more 7", len(analysis_results), type(analysis_results))
+            analysis_results.append(results_structure)
+            print("Summary list_strings", len(analysis_results), type(analysis_results))
+            while len(analysis_results) >= BATCH_SIZE:
+                print("Reduce starts. Strings:", len(analysis_results))
+                tasks = []
+                for i in range(0, len(analysis_results), BATCH_SIZE):
+                    print(i)
+                    batch = analysis_results[i:i + BATCH_SIZE]
+                    tasks.append(analyze_reduce(batch, dev_level, description))
+                analysis_results = [await future for future in asyncio.as_completed(tasks)]
+                # analysis_results = await asyncio.gather(*tasks)
+                print("while loop ends")
+
+            if type(analysis_results) == list:
+                analysis_results = await analyze_reduce(analysis_results, dev_level, description)
+            else:
+                analysis_results = "Something wrong"
+
+        print("Time run: ", time.time() - start)
+        return json.dumps(analysis_results)
+
     except Exception as e:
-        analysis_results.append({"error": str(e)})
-
-    count_useful_files = 0
-    for file_name, file_content in files_to_analyze.items():
-        if file_content:
-            count_useful_files += 1
-            try:
-                response = client.chat.completions.create(
-                    model=GPT_MODEL,
-                    messages=[
-                        {"role": "system",
-                         "content": f"You are an experienced software reviewer.Evaluate code according: {description}"
-                         },
-                        {"role": "user",
-                         "content": (f"File name: '{file_name}'"
-                                     f"{file_content}"
-                                     f"Downsides: identifying weaknesses and issues and good solutions in 3 sentences."
-                                     f"Conclusion: write a brief comment on the developer’s skills in 1 sentence."
-                                     )}
-                    ],
-                    max_tokens=MAX_TOKEN,
-                    temperature=TEMPERATURE
-                )
-                analysis_results.append(response.choices[0].message.content.strip())
-                if count_useful_files % 15 == 0:
-                    structure_data, files_data = analysis_results[0], analysis_results[1:]
-                    response = client.chat.completions.create(
-                        model=GPT_MODEL,
-                        messages=[
-                            {"role": "system",
-                             "content": f"You are experienced software reviewer.Evaluate code according:{description}"
-                             },
-                            {"role": "user",
-                             "content": f"Make summary review according preview analyze: {files_data}"}
-                        ],
-                        max_tokens=MAX_TOKEN,
-                        temperature=TEMPERATURE
-                    )
-                    analysis_results = [structure_data, response.choices[0].message.content.strip()]
-            except Exception as e:
-                analysis_results.append({"error": str(e)})
-
-    try:
-        response = client.chat.completions.create(
-            model=GPT_MODEL,
-            messages=[
-                {"role": "system",
-                 "content": f"You are an experienced software reviewer.Evaluate the code according: {description}"
-                 },
-                {"role": "user",
-                 "content": (f"Make summary review according preview analyze: {analysis_results}"
-                             f"Downsides: identifying weaknesses and issues and good solutions in 3 sentences."
-                             f"Rating: (from 1 to 5) for {dev_level} level."
-                             f"Conclusion: write a brief comment on the developer’s skills in 1 sentence."
-                             )}
-            ],
-            max_tokens=MAX_TOKEN_SUMMARY,
-            temperature=TEMPERATURE
-        )
-        summary_result = response.choices[0].message.content.strip()
-    except Exception as e:
-        summary_result = {"error": str(e)}
-
-    result = result_dividing(summary_result)
-    result.update({"project_structure": project_structure})
-    return json.dumps(result)
+        raise HTTPException(status_code=500, detail=str(e))
