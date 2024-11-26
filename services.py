@@ -64,6 +64,9 @@ def handle_api_errors(func: Callable) -> Callable:
 
 
 def repo_url_to_git_api_url(input_url: str) -> str | None:
+    """
+    The function converts GitHub Repository Link to GitHub API Link
+    """
     input_url = input_url.strip().lower()
     if input_url.startswith(GITHUB_ROOT):
         res = input_url.removeprefix(GITHUB_ROOT).split("/")
@@ -73,37 +76,63 @@ def repo_url_to_git_api_url(input_url: str) -> str | None:
 
 
 async def get_all_files(url: str, client: httpx.AsyncClient) -> Dict[str, Optional[str]] | None:
+    """
+    The function return dict {FILE_NAME: TEXT of downloaded files from GitHub if they have VALID_EXTENSIONS or None}
+    """
     files_dict = {}
-    response = await client.get(url)
-    if response.status_code == 200:
-        items = response.json()
+    try:
+        response = await client.get(url)
+        response.raise_for_status()  # Raise exception for status code 4xx/5xx
+        logger.info(f"Fetched data from {url} with status {response.status_code}")
+
+        try:
+            items = response.json()
+        except ValueError as e:
+            logger.error(f"Failed to parse JSON from {url}: {e}")
+            return None
+
+        # Processing each item
         for item in items:
             if item['type'] == 'file':
                 file_name = item['path']
                 file_extension = file_name[file_name.rfind("."):]
 
                 if file_extension in VALID_EXTENSIONS:
-                    file_response = await client.get(item['download_url'])
-
-                    if file_response.status_code == 200:
+                    try:
+                        file_response = await client.get(item['download_url'])
+                        file_response.raise_for_status()
                         files_dict[file_name] = file_response.text
-                    else:
+                        logger.info(f"Downloaded file: {file_name}")
+                    except httpx.RequestError as e:
+                        logger.error(f"Failed to fetch file {file_name} from {item['download_url']}: {e}")
                         files_dict[file_name] = None
                 else:
+                    logger.info(f"Ignored file due to invalid extension: {file_name}")
                     files_dict[file_name] = None
 
             elif item['type'] == 'dir':
+                try:
+                    subdir_files = await get_all_files(item['_links']['self'], client)
+                    if subdir_files:
+                        files_dict.update(subdir_files)
+                except Exception as e:
+                    logger.error(f"Error processing directory {item['path']}: {e}")
 
-                subdir_files = await get_all_files(item['_links']['self'], client)
-                files_dict.update(subdir_files)
-    else:
-        files_dict = None
+    except httpx.RequestError as e:
+        logger.error(f"Failed to fetch data from {url}: {e}")
+        return None
+    except Exception as e:
+        logger.exception(f"Unexpected error while fetching files: {e}")
+        return None
 
     return files_dict
 
 
 @handle_api_errors
 async def analyze_structure(files: Dict[str, Optional[str]], description: str) -> str:
+    """
+    The function makes request OpenAI API about repository structure and return response string
+    """
     structure = ", ".join(files.keys())
     response = openai.chat.completions.create(
             model=GPT_MODEL,
@@ -125,7 +154,9 @@ async def analyze_structure(files: Dict[str, Optional[str]], description: str) -
 
 @handle_api_errors
 async def analyze_file_content(name: str, content: str, level: str, description: str) -> str:
-    # loop = asyncio.get_running_loop()
+    """
+    The function makes request OpenAI API to analyze the file content and return response string
+    """
     response = openai.chat.completions.create(
             model=GPT_MODEL,
             messages=[
@@ -145,6 +176,9 @@ async def analyze_file_content(name: str, content: str, level: str, description:
 
 @handle_api_errors
 async def analyze_summary(analysis: list, results_structure: str, dev_level: str, description: str) -> str:
+    """
+    The function makes request OpenAI API to summary content and return response string
+    """
     analysis.append(results_structure)
     summaries_text = "\n".join(analysis)
     prompt = f"""{PROMPT_USER_SUMMARY_TASK}{summaries_text}
@@ -171,6 +205,9 @@ async def analyze_summary(analysis: list, results_structure: str, dev_level: str
 
 @handle_api_errors
 async def analyze_reduce(analysis_butch: list, dev_level: str, description: str) -> str:
+    """
+    The function makes request OpenAI API to reduce content and return response string
+    """
     summaries_text = "\n".join(analysis_butch)
     prompt = f"""{PROMPT_USER_REDUCE_TASK}{summaries_text}
     {PROMPT_USER_REDUCE_SOLUTIONS}\n{PROMPT_USER_REDUCE_SKILLS}
