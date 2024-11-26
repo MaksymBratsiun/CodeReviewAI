@@ -1,8 +1,9 @@
-from typing import Dict, Optional
+import logging
+from functools import wraps
+from typing import Dict, Optional, Callable, Any
 
 import httpx
 import openai
-# import asyncio
 
 BRANCH = "main"
 GPT_MODEL = "gpt-3.5-turbo"
@@ -36,6 +37,30 @@ PROMPT_USER_REDUCE_TASK = "Make summary review according preview analyze:"
 PROMPT_USER_REDUCE_SOLUTIONS = "Solutions: Summarize identifying weaknesses and good solutions in 2-3 sentences."
 PROMPT_USER_REDUCE_SKILLS = "Skills:Summarize brief comment on the developer’s skills in 1-2 sentence."
 PROMPT_USER_REDUCE_RATING = "Rating: Summarize rating (from 1 to 5) for developer level: "
+
+logger = logging.getLogger("services")
+
+
+def handle_api_errors(func: Callable) -> Callable:
+    """
+    Decorator for error handling and logging in functions working with the OpenAI API
+    """
+    @wraps(func)
+    async def wrapper(*args, **kwargs) -> Any:
+        try:
+            # Main function implementation
+            result = await func(*args, **kwargs)
+            logger.info(f"Function {func.__name__} executed successfully.")
+            return result
+        except openai.OpenAIError as e:
+            # Error handling OpenAI API
+            logger.error(f"OpenAI API error in {func.__name__}: {e}")
+            return f"Error: OpenAI API failed with error: {e}"
+        except Exception as e:
+            # Other exceptions handling
+            logger.exception(f"Unexpected error in {func.__name__}: {e}")
+            return f"Error: Unexpected failure in {func.__name__}: {e}"
+    return wrapper
 
 
 def repo_url_to_git_api_url(input_url: str) -> str | None:
@@ -77,7 +102,8 @@ async def get_all_files(url: str, client: httpx.AsyncClient) -> Dict[str, Option
     return files_dict
 
 
-def analyze_structure(files: Dict[str, Optional[str]], description: str) -> str:
+@handle_api_errors
+async def analyze_structure(files: Dict[str, Optional[str]], description: str) -> str:
     structure = ", ".join(files.keys())
     response = openai.chat.completions.create(
             model=GPT_MODEL,
@@ -97,6 +123,7 @@ def analyze_structure(files: Dict[str, Optional[str]], description: str) -> str:
     return response.choices[0].message.content.strip()
 
 
+@handle_api_errors
 async def analyze_file_content(name: str, content: str, level: str, description: str) -> str:
     # loop = asyncio.get_running_loop()
     response = openai.chat.completions.create(
@@ -116,6 +143,7 @@ async def analyze_file_content(name: str, content: str, level: str, description:
     return response.choices[0].message.content.strip()
 
 
+@handle_api_errors
 async def analyze_summary(analysis: list, results_structure: str, dev_level: str, description: str) -> str:
     analysis.append(results_structure)
     summaries_text = "\n".join(analysis)
@@ -141,6 +169,7 @@ async def analyze_summary(analysis: list, results_structure: str, dev_level: str
     return response.choices[0].message.content.strip()
 
 
+@handle_api_errors
 async def analyze_reduce(analysis_butch: list, dev_level: str, description: str) -> str:
     summaries_text = "\n".join(analysis_butch)
     prompt = f"""{PROMPT_USER_REDUCE_TASK}{summaries_text}
