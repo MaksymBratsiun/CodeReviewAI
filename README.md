@@ -4,9 +4,20 @@
 
 Auto-Review Tool.
 
- In this assignment, your goal is to create a backend prototype for a Coding Assignment Auto-Review Tool using Python. 
- This tool will help automate the process of reviewing coding assignments by leveraging OpenAi's GPT API (or alternative) 
+ Create tool will help automate the process of reviewing coding assignments by leveraging OpenAi's GPT API
  for code analysis and the GitHub API for repository access.
+
+Endpoint Specification:
+POST/review
+Accept the following data in the request body:
+- description: string (description of the coding assignment)
+- git_url: string (URL of the GitHub repository to review)
+- dev_level: string (candidate level: Junior, Middle, or Senior)
+
+The endpoint should:
+1. Use the GitHub API to fetch the repository contents.
+2. Use OpenAl's GPT API to analyze the code and generate a review.
+3. Return the review result (text) in the following format: Found files, Downsides/Comments, Rating,
 
 # Requirements
 - Python 3.x
@@ -29,7 +40,7 @@ uvicorn main:app --host localhost --port 8000 --reload
 - open 'http://localhost:8000/docs#' in a web browser
 - make post like
 ```{
-  "description": "assigment_description ",
+  "description": "short and simple",
   "git_url": "https://github.com/MaksymBratsiun/CodeReviewAI",
   "dev_level": "junior"
 }

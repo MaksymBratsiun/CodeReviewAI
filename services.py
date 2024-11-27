@@ -1,9 +1,11 @@
 import logging
 from functools import wraps
-from typing import Dict, Optional, Callable, Any
+from typing import Dict, Optional, Callable, Any, List
+import configparser
 
 import httpx
 import openai
+import asyncio
 
 BRANCH = "main"
 GPT_MODEL = "gpt-3.5-turbo"
@@ -13,6 +15,7 @@ TEMPERATURE = 0.6
 GITHUB_ROOT = "https://github.com/"
 GITHUB_API_URL = "https://api.github.com"
 VALID_EXTENSIONS = {".py", ".md", ".ini"}
+BATCH_SIZE = 7
 
 # f"{PROMPT_SYS}{description}"
 PROMPT_SYS = "You are an experienced software reviewer. Evaluate the code according:"
@@ -39,6 +42,72 @@ PROMPT_USER_REDUCE_SKILLS = "Skills:Summarize brief comment on the developer’s
 PROMPT_USER_REDUCE_RATING = "Rating: Summarize rating (from 1 to 5) for developer level: "
 
 logger = logging.getLogger("services")
+
+
+# Facade for analyze
+async def perform_analysis(files: dict, dev_level: str, description: str) -> str:
+
+    try:
+        results_structure = await analyze_structure(files, description)
+        cleaned_files = {file_path: content for file_path, content in files.items() if content is not None}
+        logger.info(f"Files to analyze: {len(cleaned_files)}")
+
+        # File analyze
+        analysis_tasks = [
+            analyze_file_content(name, content, dev_level, description)
+            for name, content in cleaned_files.items()
+        ]
+        analysis_results = await asyncio.gather(*analysis_tasks)
+
+        # Summary of results
+        return await summarize_analysis(analysis_results, results_structure, dev_level, description)
+
+    except Exception as e:
+        logger.exception(f"Analysis failed: {e}")
+        raise
+
+
+# Summary analysis function of each file content analysis results
+async def summarize_analysis(analysis_results: List[str],
+                             results_structure: str,
+                             dev_level: str,
+                             description: str
+                             ) -> str:
+    """
+    Summary analysis files and analysis structure into one
+    :param analysis_results: List[str]
+    :param results_structure: str
+    :param dev_level: str
+    :param description: str
+    :return: str
+    """
+    try:
+        if len(analysis_results) == 0:
+            logger.info("No file content to summarize")
+            return "No file content to summarize."
+
+        if len(analysis_results) <= BATCH_SIZE:
+            logger.info("Summary starts for < 7 files")
+            return await analyze_summary(analysis_results, results_structure, dev_level, description)
+
+        logger.info(f"Summary starts for > 7 files. Total: {len(analysis_results)}")
+        analysis_results.append(results_structure)
+
+        # Loop of summary results
+        while len(analysis_results) >= BATCH_SIZE:
+            logger.info(f"Reducing batch. Current size: {len(analysis_results)}")
+            tasks = [
+                analyze_reduce(analysis_results[i:i + BATCH_SIZE], dev_level, description)
+                for i in range(0, len(analysis_results), BATCH_SIZE)
+            ]
+            analysis_results = await asyncio.gather(*tasks)
+
+        logger.info("Final reduction")
+        return await analyze_reduce(analysis_results, dev_level, description) if analysis_results else "No results"
+
+    except Exception as e:
+        logger.exception(f"Summarization failed: {e}")
+        raise
 
 
 def handle_api_errors(func: Callable) -> Callable:
