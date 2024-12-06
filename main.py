@@ -27,9 +27,8 @@ LOG_LEVELS = {
     "ERROR": logging.ERROR,
     "CRITICAL": logging.CRITICAL
 }
-
 level = LOG_LEVELS.get(DEBUG_LEVEL.upper(), logging.INFO)
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=level)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
@@ -40,41 +39,37 @@ app = FastAPI()
 @app.post("/review")
 async def review(request: ReviewRequest) -> JSONResponse:
     """
-    Handles the review process for a given Git repository.
+    Endpoint to review and analyze a Git repository.
 
-    This endpoint takes in details of a Git repository, fetches its files,
-    and performs an analysis based on the provided development level and description.
+    This function processes an incoming POST request to review a Git repository by analyzing its structure and files.
+    It uses the OpenAI API to perform various analyses, validates the results, and returns structured feedback in JSON format.
 
     Args:
-        request (ReviewRequest): The request payload containing:
-            - `git_url` (str): The URL of the Git repository to analyze.
-            - `dev_level` (str): The development level for the analysis.
-            - `description` (str): Additional context or description for the analysis.
+        request (ReviewRequest): The request body containing:
+            - git_url (str): URL of the Git repository to analyze.
+            - dev_level (str): The developer's proficiency level for contextual analysis.
+            - description (str): Description or context for the analysis.
 
     Returns:
-        JSONResponse: A JSON object containing the analysis results.
+        JSONResponse: A JSON object with the analyzed results containing keys:
+            - "Comment" (str): General comments about the repository and developer's code.
+            - "Skills" (str): Observations on the developer's skills.
+            - "Rating" (int): A numeric rating (1-5) for the developer's performance.
 
     Raises:
         HTTPException:
-            - If the Git repository URL is invalid (404).
-            - If the repository or branch is not found (404).
-            - For any unhandled internal errors (500).
+            - 404: If the repository URL is invalid or no files are found.
+            - 500: For errors in processing, such as invalid JSON, missing required keys, or unhandled exceptions.
 
     Process:
-        1. Validate the provided `git_url` and convert it to an API-compatible URL.
-        2. Fetch all files from the repository asynchronously using `httpx.AsyncClient`.
-        3. Perform a detailed analysis of the files:
-            - Analyze the structure and content.
-            - Generate a summarized review based on the development level and description.
-        4. Return the analysis result as a JSON response.
+    1. Validate the Git repository URL and retrieve the repository's API URL.
+    2. Fetch all files from the repository.
+    3. Perform an analysis on the retrieved files using the OpenAI API.
+    4. Parse and validate the analysis result to ensure required keys are present.
+    5. Return the validated result as a structured JSON response.
 
     Logging:
-        - Logs the start and end of the review process.
-        - Logs any HTTP or unhandled exceptions.
-
-    Notes:
-        - The function uses `httpx.AsyncClient` for asynchronous HTTP operations.
-        - Analysis is delegated to the `perform_analysis` function.
+    - Logs significant steps, including start/end times, errors, and validation results, for monitoring and debugging.
     """
 
     logger.info(f"Start {APP_NAME}")
@@ -85,8 +80,9 @@ async def review(request: ReviewRequest) -> JSONResponse:
         raise HTTPException(status_code=404, detail="Incorrect repository url")
 
     try:
+        # Files downloading
         async with httpx.AsyncClient() as client:
-            # Files downloading
+
             files = await get_all_files(git_api_url, client)
             if not files:
                 raise HTTPException(status_code=404, detail="Repository or branch not found")
