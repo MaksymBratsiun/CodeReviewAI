@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import json
 
 import openai
 import httpx
@@ -8,25 +9,31 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
+from config import config
 from schemas import ReviewRequest
-from services import repo_url_to_git_api_url, get_all_files
-from services import perform_analysis
-
-BRANCH = "main"
-GPT_MODEL = "gpt-3.5-turbo"
-MAX_TOKEN = 300
-MAX_TOKEN_SUMMARY = 500
-TEMPERATURE = 0.6
-BATCH_SIZE = 7
+from services import repo_url_to_git_api_url, get_all_files, perform_analysis
 
 
 load_dotenv()
 openai.api_key = os.environ.get('OPENAI_API_KEY')
 
+APP_NAME = config.get("general", "app_name", fallback="CodeReviewAI")
+
+DEBUG_LEVEL = config.get("general", "debug", fallback="INFO")
+LOG_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL
+}
+
+level = LOG_LEVELS.get(DEBUG_LEVEL.upper(), logging.INFO)
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
+# Initialization FastAPI
 app = FastAPI()
 
 
@@ -70,7 +77,7 @@ async def review(request: ReviewRequest) -> JSONResponse:
         - Analysis is delegated to the `perform_analysis` function.
     """
 
-    logger.info(f"Start review")
+    logger.info(f"Start {APP_NAME}")
     start_time = time.time()
     git_api_url = repo_url_to_git_api_url(request.git_url)
 
@@ -84,11 +91,35 @@ async def review(request: ReviewRequest) -> JSONResponse:
             if not files:
                 raise HTTPException(status_code=404, detail="Repository or branch not found")
 
-            # Analyze
+        # Analyze
+        try:
+            # Perform analysis
             analysis_result = await perform_analysis(files, request.dev_level, request.description)
 
+            # Validate and parse response
+            logger.info(f"Parsing and validating analysis result")
+            response_data = json.loads(analysis_result)
+
+            # Ensure required keys exist
+            required_keys = {"Comment", "Skills", "Rating"}
+            missing_keys = required_keys - response_data.keys()
+            if missing_keys:
+                logger.error(f"Final response is missing required keys: {missing_keys}")
+                raise ValueError(f"Missing required keys: {missing_keys}")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON format in analysis result: {e}")
+            raise HTTPException(status_code=500, detail="Invalid JSON format in response from analysis.")
+        except ValueError as e:
+            logger.error(f"Validation error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            logger.exception(f"Unhandled error occurred during analysis: {e}")
+            raise HTTPException(status_code=500, detail="Internal Server Error")
+
+        # Return the validated response as JSON
         logger.info(f"Review finished in {time.time() - start_time:.2f}s")
-        return JSONResponse(content={"result": analysis_result})
+        return JSONResponse(content=response_data)
 
     except HTTPException as http_err:
         logger.error(f"HTTP error: {http_err.detail}")

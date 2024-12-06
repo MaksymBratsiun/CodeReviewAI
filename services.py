@@ -1,47 +1,28 @@
 import logging
-from functools import wraps
-from typing import Dict, Optional, Callable, Any, List
 import configparser
+from typing import Dict, Optional, List
 
 import httpx
-import openai
 import asyncio
 
-BRANCH = "main"
-GPT_MODEL = "gpt-3.5-turbo"
-MAX_TOKENS = 300
-MAX_TOKEN_SUMMARY = 500
-TEMPERATURE = 0.6
-GITHUB_ROOT = "https://github.com/"
-GITHUB_API_URL = "https://api.github.com"
-VALID_EXTENSIONS = {".py", ".md", ".ini"}
-BATCH_SIZE = 7
+from config import config
+from api_requests import analyze_summary, analyze_reduce, analyze_structure, analyze_file_content
 
-# f"{PROMPT_SYS}{description}"
-PROMPT_SYS = "You are an experienced software reviewer. Evaluate the code according:"
+GITHUB_ROOT = config.get("services", "github_root", fallback="https://github.com/")
+GITHUB_API_URL = config.get("services", "github_api_url", fallback="https://api.github.com")
+BATCH_SIZE = config.getint("services", "butch_size", fallback=7)
 
-# f"Project structure:{structure}{PROMPT...}"
-PROMPT_USER_STRUCTURE = "Identifying weaknesses, issues and good solutions in 3 sentences." \
-                        " Make conclusion in 1 sentences."
+DEFAULT_VALID_EXTENSIONS = {".py", ".md", ".ini"}  # Default valid file extensions
+try:
+    VALID_EXTENSIONS = set(config.get("services", "valid_extensions").split(","))
+except configparser.NoSectionError:
+    logging.error("Config section 'services' not found in config.ini. Using default VALID_EXTENSIONS.")
+    VALID_EXTENSIONS = DEFAULT_VALID_EXTENSIONS
+except configparser.NoOptionError:
+    logging.error("Option 'valid_extensions' not found in section 'services'. Using default VALID_EXTENSIONS.")
+    VALID_EXTENSIONS = DEFAULT_VALID_EXTENSIONS
 
-# f"File name: {name}\n{content}\n{PROMPT...}{level}"
-PROMPT_USER_FILE_ANALYZE = "Identifying weaknesses, issues and good solutions in 2-3 sentences. " \
-                           "Write a brief comment on the developer’s skills in 1 sentence for " \
-                           "developer level: "
-
-# f"{..SUMMARY_TASK}{summaries_text}{..SUMMARY_SOLUTIONS}\n{..SUMMARY_SKILLS}{..SUMMARY_RATING}{dev_level}"
-PROMPT_USER_SUMMARY_TASK = "Make summary review according preview analyze:"
-PROMPT_USER_SUMMARY_SOLUTIONS = "Solutions: identifying weaknesses and good solutions in 2-3 sentences."
-PROMPT_USER_SUMMARY_SKILLS = "Skills: write a brief comment on the developer’s skills in 1-2 sentence."
-PROMPT_USER_SUMMARY_RATING = "Rating: (from 1 to 5) for developer level: "
-
-# f"{..REDUCE_TASK}{summaries_text}{..REDUCE_SOLUTIONS}\n{..REDUCE_SKILLS}{..REDUCE_RATING}{dev_level}"
-PROMPT_USER_REDUCE_TASK = "Make summary review according preview analyze:"
-PROMPT_USER_REDUCE_SOLUTIONS = "Solutions: Summarize identifying weaknesses and good solutions in 2-3 sentences."
-PROMPT_USER_REDUCE_SKILLS = "Skills:Summarize brief comment on the developer’s skills in 1-2 sentence."
-PROMPT_USER_REDUCE_RATING = "Rating: Summarize rating (from 1 to 5) for developer level: "
-
-logger = logging.getLogger("services")
+logger = logging.getLogger(__name__)
 
 
 # Facade for analyze
@@ -110,28 +91,6 @@ async def summarize_analysis(analysis_results: List[str],
         raise
 
 
-def handle_api_errors(func: Callable) -> Callable:
-    """
-    Decorator for error handling and logging in functions working with the OpenAI API
-    """
-    @wraps(func)
-    async def wrapper(*args, **kwargs) -> Any:
-        try:
-            # Main function implementation
-            result = await func(*args, **kwargs)
-            logger.info(f"Function {func.__name__} executed successfully.")
-            return result
-        except openai.OpenAIError as e:
-            # Error handling OpenAI API
-            logger.error(f"OpenAI API error in {func.__name__}: {e}")
-            return f"Error: OpenAI API failed with error: {e}"
-        except Exception as e:
-            # Other exceptions handling
-            logger.exception(f"Unexpected error in {func.__name__}: {e}")
-            return f"Error: Unexpected failure in {func.__name__}: {e}"
-    return wrapper
-
-
 def repo_url_to_git_api_url(input_url: str) -> str | None:
     """
     The function converts GitHub Repository Link to GitHub API Link
@@ -195,105 +154,3 @@ async def get_all_files(url: str, client: httpx.AsyncClient) -> Dict[str, Option
         return None
 
     return files_dict
-
-
-@handle_api_errors
-async def analyze_structure(files: Dict[str, Optional[str]], description: str) -> str:
-    """
-    The function makes request OpenAI API about repository structure and return response string
-    """
-    structure = ", ".join(files.keys())
-    response = openai.chat.completions.create(
-            model=GPT_MODEL,
-            messages=[
-                {"role": "system",
-                 "content": f"{PROMPT_SYS}{description}"
-                 },
-                {"role": "user",
-                 "content": f"Project structure:{structure}\n{PROMPT_USER_STRUCTURE}"
-                 }
-            ],
-            max_tokens=MAX_TOKENS,
-            temperature=TEMPERATURE
-
-        )
-
-    return response.choices[0].message.content.strip()
-
-
-@handle_api_errors
-async def analyze_file_content(name: str, content: str, level: str, description: str) -> str:
-    """
-    The function makes request OpenAI API to analyze the file content and return response string
-    """
-    response = openai.chat.completions.create(
-            model=GPT_MODEL,
-            messages=[
-                {"role": "system",
-                 "content": f"{PROMPT_SYS}{description}"
-                 },
-                {"role": "user",
-                 "content": f"File name: {name}\n{content}\n{PROMPT_USER_FILE_ANALYZE}{level}"
-                 }
-            ],
-            max_tokens=MAX_TOKENS,
-            temperature=TEMPERATURE
-
-        )
-    return response.choices[0].message.content.strip()
-
-
-@handle_api_errors
-async def analyze_summary(analysis: list, results_structure: str, dev_level: str, description: str) -> str:
-    """
-    The function makes request OpenAI API to summary content and return response string
-    """
-    analysis.append(results_structure)
-    summaries_text = "\n".join(analysis)
-    prompt = f"""{PROMPT_USER_SUMMARY_TASK}{summaries_text}
-    {PROMPT_USER_SUMMARY_SOLUTIONS}\n{PROMPT_USER_SUMMARY_SKILLS}
-    {PROMPT_USER_SUMMARY_RATING}{dev_level}
-    """
-    response = openai.chat.completions.create(
-        model=GPT_MODEL,
-        messages=[
-            {"role": "system",
-             "content": f"{PROMPT_SYS}{description}"
-             },
-            {"role": "user",
-             "content": prompt
-             }
-        ],
-        max_tokens=MAX_TOKENS,
-        temperature=TEMPERATURE
-
-    )
-
-    return response.choices[0].message.content.strip()
-
-
-@handle_api_errors
-async def analyze_reduce(analysis_butch: list, dev_level: str, description: str) -> str:
-    """
-    The function makes request OpenAI API to reduce content and return response string
-    """
-    summaries_text = "\n".join(analysis_butch)
-    prompt = f"""{PROMPT_USER_REDUCE_TASK}{summaries_text}
-    {PROMPT_USER_REDUCE_SOLUTIONS}\n{PROMPT_USER_REDUCE_SKILLS}
-    {PROMPT_USER_REDUCE_RATING}{dev_level}
-    """
-    response = openai.chat.completions.create(
-        model=GPT_MODEL,
-        messages=[
-            {"role": "system",
-             "content": f"{PROMPT_SYS}{description}"
-             },
-            {"role": "user",
-             "content": prompt
-             }
-        ],
-        max_tokens=MAX_TOKENS,
-        temperature=TEMPERATURE
-    )
-
-    return response.choices[0].message.content.strip()
