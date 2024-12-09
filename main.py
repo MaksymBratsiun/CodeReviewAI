@@ -18,8 +18,9 @@ load_dotenv()
 openai.api_key = os.environ.get('OPENAI_API_KEY')
 
 APP_NAME = config.get("general", "app_name", fallback="CodeReviewAI")
-
 DEBUG_LEVEL = config.get("general", "debug", fallback="INFO")
+RESPONSE_REQUIRED_KEYS = {"Comment", "Skills", "Rating"}
+
 LOG_LEVELS = {
     "DEBUG": logging.DEBUG,
     "INFO": logging.INFO,
@@ -42,25 +43,27 @@ async def review(request: ReviewRequest) -> JSONResponse:
     Endpoint to review and analyze a Git repository.
 
     This function processes an incoming POST request to review a Git repository by analyzing its structure and files.
-    It uses the OpenAI API to perform various analyses, validates the results, and returns structured feedback in JSON format.
+    It uses the OpenAI API to perform various analyses, validates the results, and returns structured feedback in JSON.
 
     Args:
-        request (ReviewRequest): The request body containing:
-            - git_url (str): URL of the Git repository to analyze.
-            - dev_level (str): The developer's proficiency level for contextual analysis.
-            - description (str): Description or context for the analysis.
+    request (ReviewRequest): The request body containing:
+    - git_url (str): URL of the Git repository to analyze.
+    - dev_level (str): The developer's proficiency level for contextual analysis.
+    - description (str): Description or context for the analysis.
 
     Returns:
-        JSONResponse: A JSON object with the analyzed results containing keys:
-            - "Comment" (str): General comments about the repository and developer's code.
-            - "Skills" (str): Observations on the developer's skills.
-            - "Rating" (int): A numeric rating (1-5) for the developer's performance.
+    JSONResponse: A JSON object with the analyzed results containing keys:
+    - "Comment" (str): General comments about the repository and developer's code.
+    - "Skills" (str): Observations on the developer's skills.
+    - "Rating" (int): A numeric rating (1-5) for the developer's performance.
 
     Raises:
-        HTTPException:
-            - 404: If the repository URL is invalid or no files are found.
-            - 500: For errors in processing, such as invalid JSON, missing required keys, or unhandled exceptions.
-
+    HTTPException:
+    - 404: If the repository URL is invalid or no files are found.
+    - 422: Validation error if missing required keys during file analyze.
+    - 500: For errors in processing, such as invalid JSON, missing required keys, or unhandled exceptions.
+    - 503: HTTP request files downloading failed.
+    - 504: Repository request files downloading timeout.
     Process:
     1. Validate the Git repository URL and retrieve the repository's API URL.
     2. Fetch all files from the repository.
@@ -82,10 +85,17 @@ async def review(request: ReviewRequest) -> JSONResponse:
     try:
         # Files downloading
         async with httpx.AsyncClient() as client:
-
-            files = await get_all_files(git_api_url, client)
-            if not files:
-                raise HTTPException(status_code=404, detail="Repository or branch not found")
+            try:
+                # Files downloading
+                files = await get_all_files(git_api_url, client)
+                if not files:
+                    raise HTTPException(status_code=404, detail="Repository or branch not found.")
+            except httpx.TimeoutException as e:
+                logger.error(f"HTTP request timed out: {e}")
+                raise HTTPException(status_code=504, detail="Repository request timeout.")
+            except httpx.RequestError as e:
+                logger.error(f"HTTP request failed: {e}")
+                raise HTTPException(status_code=503, detail="Error communicating with Git repository.")
 
         # Analyze
         try:
@@ -97,18 +107,18 @@ async def review(request: ReviewRequest) -> JSONResponse:
             response_data = json.loads(analysis_result)
 
             # Ensure required keys exist
-            required_keys = {"Comment", "Skills", "Rating"}
+            required_keys = RESPONSE_REQUIRED_KEYS
             missing_keys = required_keys - response_data.keys()
             if missing_keys:
                 logger.error(f"Final response is missing required keys: {missing_keys}")
-                raise ValueError(f"Missing required keys: {missing_keys}")
+                raise HTTPException(status_code=422, detail=f"Missing required keys: {missing_keys}")
 
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON format in analysis result: {e}")
             raise HTTPException(status_code=500, detail="Invalid JSON format in response from analysis.")
         except ValueError as e:
             logger.error(f"Validation error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=422, detail=str(e))
         except Exception as e:
             logger.exception(f"Unhandled error occurred during analysis: {e}")
             raise HTTPException(status_code=500, detail="Internal Server Error")

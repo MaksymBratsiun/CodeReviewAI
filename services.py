@@ -22,11 +22,33 @@ except configparser.NoOptionError:
     logging.error("Option 'valid_extensions' not found in section 'services'. Using default VALID_EXTENSIONS.")
     VALID_EXTENSIONS = DEFAULT_VALID_EXTENSIONS
 
+
 logger = logging.getLogger(__name__)
 
 
 # Facade for analyze
 async def perform_analysis(files: dict, dev_level: str, description: str) -> str:
+    """
+     Performs a comprehensive analysis of the provided files, generates individual file analyses,
+     and creates a summary of the results.
+
+     Args:
+     files (dict): A dictionary where keys are file paths and values are file contents.
+     dev_level (str): The developer's proficiency level (e.g., "junior", "mid", "senior").
+     description (str): A description of the project or task to guide the analysis.
+
+     Returns:
+     str: A summary of the analysis results in JSON format.
+
+     Raises:
+     Exception: If any error occurs during the analysis process, it is logged and re-raised.
+
+     Workflow:
+     1. Make analysis the project structure by calling `analyze_structure`.
+     2. Clean the input files to exclude any with `None` content.
+     3. Perform content analysis on each file asynchronously using `analyze_file_content`.
+     4. Summarize the analysis results along with the project structure using `summarize_analysis`.
+     """
 
     try:
         results_structure = await analyze_structure(files, description)
@@ -55,13 +77,29 @@ async def summarize_analysis(analysis_results: List[str],
                              description: str
                              ) -> str:
     """
-    Summary analysis files and analysis structure into one
-    :param analysis_results: List[str]
-    :param results_structure: str
-    :param dev_level: str
-    :param description: str
-    :return: str
+    Summarizes the results of file analyses and combines them with the project structure analysis.
+
+    Args:
+    analysis_results (List[str]): A list of analysis results for individual files.
+    results_structure (str): A summary of the project's overall structure.
+    dev_level (str): The developer's proficiency level (e.g., "junior", "mid", "senior").
+    description (str): A description of the project or task to guide the summary.
+
+    Returns:
+    str: A summarized analysis in text format or JSON format if requested.
+
+    Raises:
+    Exception: Logs and re-raises any error that occurs during the summarization process.
+
+    Workflow:
+    1. Check if there are any results to summarize. Return a message if none exist.
+    2. If the number of results is below the batch size, directly summarize them using `analyze_summary`.
+    3. For larger result sets:
+        - Break the results into smaller batches for incremental reduction using `analyze_reduce`.
+        - Perform batch reductions until the results fit into a single batch.
+    4. Return the final summarized reduction.
     """
+
     try:
         if len(analysis_results) == 0:
             logger.info("No file content to summarize")
@@ -93,7 +131,20 @@ async def summarize_analysis(analysis_results: List[str],
 
 def repo_url_to_git_api_url(input_url: str) -> str | None:
     """
-    The function converts GitHub Repository Link to GitHub API Link
+    Converts a GitHub repository URL to its corresponding GitHub API URL.
+
+    Args:
+    input_url (str): The URL of the GitHub repository, typically in the form "https://github.com/{owner}/{repo}".
+
+    Returns:
+    str | None: The GitHub API URL for accessing the repository's contents if the input URL is valid.
+    Returns `None` if the input URL is not a valid GitHub repository link.
+
+    Workflow:
+    1. Normalize the input URL by stripping whitespace and converting it to lowercase.
+    2. Check if the input URL starts with the predefined GitHub root URL (`GITHUB_ROOT`).
+    3. Extract the owner and repository name from the URL.
+    4. Construct the API URL using `GITHUB_API_URL` for accessing the repository's contents.
     """
     input_url = input_url.strip().lower()
     if input_url.startswith(GITHUB_ROOT):
@@ -105,9 +156,34 @@ def repo_url_to_git_api_url(input_url: str) -> str | None:
 
 async def get_all_files(url: str, client: httpx.AsyncClient) -> Dict[str, Optional[str]] | None:
     """
-    The function return dict {FILE_NAME: TEXT of downloaded files from GitHub if they have VALID_EXTENSIONS or None}
+    Fetches and returns a dictionary of file names and their contents from a given GitHub repository URL.
+
+    Args:
+    url (str): The GitHub API URL to fetch the repository's file data.
+    client (httpx.AsyncClient): An asynchronous HTTP client for making requests.
+
+    Returns:
+    Dict[str, Optional[str]] | None:
+    - A dictionary where keys are file names and values are their respective text content
+      if they have valid extensions (defined by `VALID_EXTENSIONS`).
+    - For files with invalid extensions, their value is `None`.
+    - Returns `None` if the request or processing fails.
+
+    Workflow:
+    1. Sends a GET request to the provided URL to retrieve repository data.
+    2. Parses the JSON response to determine the type of each item (file or directory).
+    3. Downloads and stores the content of files with valid extensions in the result dictionary.
+    4. Recursively processes directories to fetch their contents.
+    5. Logs and handles exceptions for HTTP requests, JSON parsing, and file fetching.
+
+    Notes:
+    - The function ignores files with extensions not in the `VALID_EXTENSIONS` set.
+    - Files in nested directories are recursively fetched and included in the dictionary.
+    - If an error occurs (e.g., a request fails or JSON parsing fails), the function logs the error and returns `None`.
     """
+
     files_dict = {}
+
     try:
         response = await client.get(url)
         response.raise_for_status()  # Raise exception for status code 4xx/5xx
