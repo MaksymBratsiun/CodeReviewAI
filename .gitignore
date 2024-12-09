@@ -7,4 +7,5 @@
 __pycache__/main.cpython-310.pyc
 __pycache__/
 data.json
-test.py
+poetry.lock
+pyproject.toml

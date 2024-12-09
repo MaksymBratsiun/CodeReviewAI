@@ -39,7 +39,8 @@ uvicorn main:app --host localhost --port 8000 --reload
 ```
 - open 'http://localhost:8000/docs#' in a web browser
 - make post like
-```{
+```
+{
   "description": "short and simple",
   "git_url": "https://github.com/MaksymBratsiun/CodeReviewAI",
   "dev_level": "junior"
@@ -47,12 +48,12 @@ uvicorn main:app --host localhost --port 8000 --reload
 ```
 - response
 ```
-**Solutions:**
-1. Enhance error handling and improve flexibility in design practices.
-2. Consolidate dependency management by choosing one package manager and organize modules for better maintainability.
-**Skills:**
-The developer demonstrates a good understanding of Python, FastAPI, and asynchronous programming, but could focus on 
-refining error handling and code documentation for better quality and maintainability.
-**Rating:** 
-3 out of 5 for developer level: junior
+{
+  "Comment": "The developer has a strong grasp of project organization and has implemented good practices 
+    like separation of concerns. However, simplifying dependency management and 
+    enhancing documentation would significantly improve the project's maintainability and user experience.",
+  "Skills": "The developer shows a commendable understanding of project structure and organization, 
+    but should focus on refining documentation and dependency management for better clarity.",
+  "Rating": 4
+  }
 ```
