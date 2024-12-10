@@ -9,3 +9,7 @@ __pycache__/
 data.json
 poetry.lock
 pyproject.toml
+Dockerfile
+docker-compose.yml
+.pytest_cache/
+.coverage

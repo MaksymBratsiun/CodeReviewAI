@@ -149,9 +149,10 @@ def repo_url_to_git_api_url(input_url: str) -> str | None:
     input_url = input_url.strip().lower()
     if input_url.startswith(GITHUB_ROOT):
         res = input_url.removeprefix(GITHUB_ROOT).split("/")
-        if len(res) > 1:
-            owner, repo = res[0], res[1]
+        if len(res) > 1 and res[0].strip() and res[1].strip():
+            owner, repo = res[0].strip(), res[1].strip()
             return f"{GITHUB_API_URL}/repos/{owner}/{repo}/contents"
+    return None
 
 
 async def get_all_files(url: str, client: httpx.AsyncClient) -> Dict[str, Optional[str]] | None:

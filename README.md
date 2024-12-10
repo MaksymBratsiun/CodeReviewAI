@@ -41,7 +41,7 @@ uvicorn main:app --host localhost --port 8000 --reload
 - make post like
 ```
 {
-  "description": "short and simple",
+  "description": "",
   "git_url": "https://github.com/MaksymBratsiun/CodeReviewAI",
   "dev_level": "junior"
 }
@@ -49,11 +49,12 @@ uvicorn main:app --host localhost --port 8000 --reload
 - response
 ```
 {
-  "Comment": "The developer has a strong grasp of project organization and has implemented good practices 
-    like separation of concerns. However, simplifying dependency management and 
-    enhancing documentation would significantly improve the project's maintainability and user experience.",
-  "Skills": "The developer shows a commendable understanding of project structure and organization, 
-    but should focus on refining documentation and dependency management for better clarity.",
-  "Rating": 4
+  "Comment": "Overall, the developer demonstrates a good understanding of Python programming concepts, async functions,
+    error handling, and API integration. However, there are consistent areas for improvement such as documentation, 
+    error handling, code organization, and attention to detail. Providing clearer instructions, refactoring code 
+    for better modularity, and improving consistency in comments and naming conventions would enhance the code quality.",
+  "Skills": "The developer shows proficiency in Python programming, async functions, and error handling, 
+    but there is a need for improvement in documentation, code organization, and attention to detail.",
+  "Rating": 3
   }
 ```
