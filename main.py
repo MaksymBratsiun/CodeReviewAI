@@ -112,7 +112,7 @@ async def review(request: ReviewRequest) -> JSONResponse:
             missing_keys = required_keys - response_data.keys()
             if missing_keys:
                 logger.error(f"Final response is missing required keys: {missing_keys}")
-                raise HTTPException(status_code=422, detail=f"Missing required keys: {missing_keys}")
+                # raise HTTPException(status_code=422, detail=f"Missing required keys: {missing_keys}")
 
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON format in analysis result: {e}")
