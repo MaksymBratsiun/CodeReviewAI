@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
-from config import config
+from config import APP_NAME, DEBUG_LEVEL, RESPONSE_REQUIRED_KEYS
 from schemas import ReviewRequest
 from services import repo_url_to_git_api_url, get_all_files, perform_analysis
 
@@ -17,19 +17,12 @@ from services import repo_url_to_git_api_url, get_all_files, perform_analysis
 load_dotenv()
 openai.api_key = os.environ.get('OPENAI_API_KEY')
 
-APP_NAME = config.get("general", "app_name", fallback="CodeReviewAI")
-DEBUG_LEVEL = config.get("general", "debug", fallback="INFO")
-RESPONSE_REQUIRED_KEYS = {"Comment", "Skills", "Rating"}
+# APP_NAME = config.get("general", "app_name", fallback="CodeReviewAI")
+# DEBUG_LEVEL = config.get("general", "debug", fallback="INFO")
+# RESPONSE_REQUIRED_KEYS = {"Comment", "Skills", "Rating"}
 
-LOG_LEVELS = {
-    "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
-    "WARNING": logging.WARNING,
-    "ERROR": logging.ERROR,
-    "CRITICAL": logging.CRITICAL
-}
-level = LOG_LEVELS.get(DEBUG_LEVEL.upper(), logging.INFO)
-logging.basicConfig(level=level)
+
+logging.basicConfig(level=DEBUG_LEVEL)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
@@ -90,7 +83,7 @@ async def review(request: ReviewRequest) -> JSONResponse:
                 # Files downloading
                 files = await get_all_files(git_api_url, client)
                 if not files:
-                    raise HTTPException(status_code=404, detail="Repository or branch not found.")
+                    raise HTTPException(status_code=404, detail="Repository, branch or valid files not found.")
             except httpx.TimeoutException as e:
                 logger.error(f"HTTP request timed out: {e}")
                 raise HTTPException(status_code=504, detail="Repository request timeout.")
@@ -112,7 +105,7 @@ async def review(request: ReviewRequest) -> JSONResponse:
             missing_keys = required_keys - response_data.keys()
             if missing_keys:
                 logger.error(f"Final response is missing required keys: {missing_keys}")
-                # raise HTTPException(status_code=422, detail=f"Missing required keys: {missing_keys}")
+                raise HTTPException(status_code=422, detail=f"Missing required keys: {missing_keys}")
 
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON format in analysis result: {e}")

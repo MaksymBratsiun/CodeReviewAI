@@ -79,3 +79,21 @@ async def test_analyze_structure_valid_response(mock_create):
         max_tokens=MAX_TOKENS,
         temperature=TEMPERATURE,
     )
+
+
+@pytest.mark.asyncio
+@patch("openai.chat.completions.create", new_callable=Mock)
+async def test_analyze_structure_with_error(mock_create):
+    # Імітація помилки API
+    mock_create.side_effect = Exception("Mocked API error")
+
+    files = {"file1.txt": "content of file1", "file2.txt": "content of file2"}
+    description = "Mock project description"
+
+    # Виклик функції
+    response = await analyze_structure(files, description)
+
+    # Перевірка результату
+    assert response == "Error: Unexpected failure in analyze_structure: Mocked API error"
+    mock_create.assert_called_once()
+

@@ -5,11 +5,11 @@ from typing import Dict, Optional, Callable, Any
 import openai
 
 from config import config
+from config import GPT_MODEL, MAX_TOKENS, TEMPERATURE
 
-GPT_MODEL = config.get("api_requests", "model", fallback="gpt-3.5-turbo")
-MAX_TOKENS = config.getint("api_requests", "max_tokens", fallback=400)
-MAX_TOKEN_SUMMARY = config.getint("api_requests", "max_token_summary", fallback=500)
-TEMPERATURE = config.getfloat("api_requests", "temperature", fallback=0.6)
+# GPT_MODEL = config.get("api_requests", "model", fallback="gpt-3.5-turbo")
+# MAX_TOKENS = config.getint("api_requests", "max_tokens", fallback=400)
+# TEMPERATURE = config.getfloat("api_requests", "temperature", fallback=0.6)
 
 # f"{PROMPT_SYS}{description}"
 PROMPT_SYS = config.get("api_requests", "prompt_sys_json", fallback="Evaluate the code according:")
