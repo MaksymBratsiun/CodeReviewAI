@@ -19,7 +19,7 @@ openai.api_key = os.environ.get('OPENAI_API_KEY')
 
 # APP_NAME = config.get("general", "app_name", fallback="CodeReviewAI")
 # DEBUG_LEVEL = config.get("general", "debug", fallback="INFO")
-# RESPONSE_REQUIRED_KEYS = {"Comment", "Skills", "Rating"}
+# RESPONSE_REQUIRED_KEYS = {"Solutions", "Skills", "Rating"}
 
 
 logging.basicConfig(level=DEBUG_LEVEL)
@@ -103,9 +103,36 @@ async def review(request: ReviewRequest) -> JSONResponse:
             # Ensure required keys exist
             required_keys = RESPONSE_REQUIRED_KEYS
             missing_keys = required_keys - response_data.keys()
-            if missing_keys:
-                logger.error(f"Final response is missing required keys: {missing_keys}")
-                raise HTTPException(status_code=422, detail=f"Missing required keys: {missing_keys}")
+
+            # if missing_keys:
+            #     logger.error(f"Final response is missing required keys: {missing_keys}")
+            #     raise HTTPException(status_code=422, detail=f"Missing required keys: {missing_keys}")
+
+            if isinstance(response_data, dict):
+
+                if missing_keys:
+                    logger.warning(f"Final response is missing required keys: {missing_keys}")
+                    # if missing_keys save data as "Solutions"
+                    final_response = [{
+                        "Solutions": json.dumps(response_data, ensure_ascii=False),
+                        "Skills": None,
+                        "Rating": None
+                    }]
+                else:
+                    # if no missing_keys save as is
+                    final_response = [{
+                        "Solutions": response_data["Solutions"],
+                        "Skills": response_data["Skills"],
+                        "Rating": response_data["Rating"]
+                    }]
+            else:
+                # if response_data is row, save as "Solutions"
+                logger.warning(f"Final response is missing required keys: {missing_keys}")
+                final_response = [{
+                    "Solutions": response_data,
+                    "Skills": None,
+                    "Rating": None
+                }]
 
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON format in analysis result: {e}")
@@ -119,8 +146,8 @@ async def review(request: ReviewRequest) -> JSONResponse:
 
         # Return the validated response as JSON
         logger.info(f"Review finished in {time.time() - start_time:.2f}s")
-        return JSONResponse(content=response_data)
-
+        return JSONResponse(content=final_response)
+        # return JSONResponse(content=response_data)
     except HTTPException as http_err:
         logger.error(f"HTTP error: {http_err.detail}")
         raise

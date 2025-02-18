@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # main.py
 APP_NAME = config.get("general", "app_name", fallback="CodeReviewAI")
-RESPONSE_REQUIRED_KEYS = {"Comment", "Skills", "Rating"}
+RESPONSE_REQUIRED_KEYS = {"Solutions", "Skills", "Rating"}
 
 debug_level = config.get("general", "debug", fallback="INFO")
 LOG_LEVELS = {
