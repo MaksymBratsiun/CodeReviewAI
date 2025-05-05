@@ -3,24 +3,13 @@ import time
 import logging
 import json
 
-import openai
 import httpx
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 from config import APP_NAME, DEBUG_LEVEL, RESPONSE_REQUIRED_KEYS
 from schemas import ReviewRequest
 from services import repo_url_to_git_api_url, get_all_files, perform_analysis
-
-
-load_dotenv()
-openai.api_key = os.environ.get('OPENAI_API_KEY')
-
-# APP_NAME = config.get("general", "app_name", fallback="CodeReviewAI")
-# DEBUG_LEVEL = config.get("general", "debug", fallback="INFO")
-# RESPONSE_REQUIRED_KEYS = {"Solutions", "Skills", "Rating"}
-
 
 logging.basicConfig(level=DEBUG_LEVEL)
 logging.getLogger("httpx").setLevel(logging.WARNING)

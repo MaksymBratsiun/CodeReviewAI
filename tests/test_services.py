@@ -1,13 +1,8 @@
 import pytest
 from httpx import AsyncClient
 
-from config import config
+from config import GITHUB_ROOT, GITHUB_API_URL
 from services import repo_url_to_git_api_url, get_all_files
-
-
-GITHUB_ROOT = config.get("services", "github_root", fallback="https://github.com/")
-GITHUB_API_URL = config.get("services", "github_api_url", fallback="https://api.github.com")
-VALID_EXTENSIONS = {".py", ".md", ".ini"}  # Change to the required ones
 
 
 @pytest.fixture

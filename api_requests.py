@@ -3,61 +3,30 @@ from functools import wraps
 from typing import Dict, Optional, Callable, Any
 
 import openai
+from openai._exceptions import OpenAIError
 
-from config import config
+from config import client
 from config import GPT_MODEL, MAX_TOKENS, TEMPERATURE
-
-# GPT_MODEL = config.get("api_requests", "model", fallback="gpt-3.5-turbo")
-# MAX_TOKENS = config.getint("api_requests", "max_tokens", fallback=400)
-# TEMPERATURE = config.getfloat("api_requests", "temperature", fallback=0.6)
-
-# f"{PROMPT_SYS}{description}"
-PROMPT_SYS = config.get("api_requests", "prompt_sys_json", fallback="Evaluate the code according:")
-
-# f"Project structure:{structure}{PROMPT...}"
-PROMPT_USER_STRUCTURE = config.get("api_requests", "prompt_user_structure", fallback="Evaluate the code according:")
-
-# f"File name: {name}\n{content}\n{PROMPT...}{level}"
-PROMPT_USER_FILE_ANALYZE = config.get("api_requests", "prompt_user_file_analyze", fallback=" Evaluate the code")
-
-# f"{..SUMMARY_TASK}{summaries_text}{..SUMMARY_SOLUTIONS}\n{..SUMMARY_SKILLS}{..SUMMARY_RATING}{dev_level}"
-PROMPT_USER_SUMMARY_TASK = config.get("api_requests", "prompt_user_summary_task",
-                                      fallback="Make summary review according preview analyze: ")
-PROMPT_USER_SUMMARY_SOLUTIONS = config.get("api_requests", "prompt_user_summary_solutions",
-                                           fallback="Solutions: identifying weaknesses and good solutions.")
-PROMPT_USER_SUMMARY_SKILLS = config.get("api_requests", "prompt_user_summary_skills",
-                                        fallback="Skills: write a brief comment on the developer’s skills.")
-PROMPT_USER_SUMMARY_RATING = config.get("api_requests", "prompt_user_summary_rating",
-                                        fallback="Rating: (from 1 to 5) for developer level:")
-
-# f"{..REDUCE_TASK}{summaries_text}{..REDUCE_SOLUTIONS}\n{..REDUCE_SKILLS}{..REDUCE_RATING}{dev_level}"
-PROMPT_USER_REDUCE_TASK = config.get("api_requests", "prompt_user_reduce_task",
-                                     fallback="Make summary review according preview analyze:")
-PROMPT_USER_REDUCE_SOLUTIONS = config.get("api_requests", "prompt_user_reduce_solutions",
-                                          fallback="Solutions: identifying weaknesses and good solutions.")
-PROMPT_USER_REDUCE_SKILLS = config.get("api_requests", "prompt_user_reduce_skills",
-                                       fallback="Skills: write a brief comment on the developer’s skills.")
-PROMPT_USER_REDUCE_RATING = config.get("api_requests", "prompt_user_reduce_rating",
-                                       fallback="Rating: (from 1 to 5) for developer level:")
+from config import PROMPT_SYS, PROMPT_USER_STRUCTURE, PROMPT_USER_FILE_ANALYZE
+from config import PROMPT_USER_SUMMARY_TASK, PROMPT_USER_SUMMARY_SOLUTIONS
+from config import PROMPT_USER_SUMMARY_SKILLS, PROMPT_USER_SUMMARY_RATING
+from config import PROMPT_USER_REDUCE_TASK, PROMPT_USER_REDUCE_SOLUTIONS
+from config import PROMPT_USER_REDUCE_SKILLS, PROMPT_USER_REDUCE_RATING
 
 logger = logging.getLogger(__name__)
 
 
 def handle_api_errors(func: Callable) -> Callable:
-
     @wraps(func)
     async def wrapper(*args, **kwargs) -> Any:
         try:
-            # Main function implementation
             result = await func(*args, **kwargs)
             logger.info(f"Function {func.__name__} executed successfully.")
             return result
-        except openai.OpenAIError as e:
-            # Error handling OpenAI API
+        except OpenAIError as e:
             logger.error(f"OpenAI API error in {func.__name__}: {e}")
             return f"Error: OpenAI API failed with error: {e}"
         except Exception as e:
-            # Other exceptions handling
             logger.exception(f"Unexpected error in {func.__name__}: {e}")
             return f"Error: Unexpected failure in {func.__name__}: {e}"
     return wrapper
@@ -87,20 +56,28 @@ async def analyze_structure(files: Dict[str, Optional[str]], description: str) -
     - General exception handling ensures robustness against unanticipated errors.
     """
     structure = ", ".join(files.keys())
-    response = openai.chat.completions.create(
+    try:
+        response = await client.chat.completions.create(
             model=GPT_MODEL,
             messages=[
-                {"role": "system",
-                 "content": f"{PROMPT_SYS}{description}"
-                 },
-                {"role": "user",
-                 "content": f"Project structure:{structure}\n{PROMPT_USER_STRUCTURE}"
-                 }
+                {
+                    "role": "system",
+                    "content": f"{PROMPT_SYS}{description}"
+                },
+                {
+                    "role": "user",
+                    "content": f"Project structure:{structure}\n{PROMPT_USER_STRUCTURE}"
+                }
             ],
             max_tokens=MAX_TOKENS,
             temperature=TEMPERATURE
         )
-    return response.choices[0].message.content.strip()
+
+        return response.choices[0].message.content.strip()
+
+    except OpenAIError as e:
+        logger.error(f"OpenAI API error: {e}")
+        raise
 
 
 @handle_api_errors
@@ -121,7 +98,8 @@ async def analyze_file_content(name: str, content: str, level: str, description:
         openai.error.OpenAIError: If an error occurs during the API request.
         Exception: For any other errors encountered during execution.
     """
-    response = openai.chat.completions.create(
+    try:
+        response = await client.chat.completions.create(
             model=GPT_MODEL,
             messages=[
                 {"role": "system",
@@ -134,7 +112,11 @@ async def analyze_file_content(name: str, content: str, level: str, description:
             max_tokens=MAX_TOKENS,
             temperature=TEMPERATURE
         )
-    return response.choices[0].message.content.strip()
+        return response.choices[0].message.content.strip()
+
+    except openai.OpenAIError as e:
+        logger.error(f"OpenAI API error: {e}")
+        raise
 
 
 @handle_api_errors
@@ -169,7 +151,7 @@ async def analyze_summary(analysis: list, results_structure: str, dev_level: str
     {PROMPT_USER_SUMMARY_SOLUTIONS}\n{PROMPT_USER_SUMMARY_SKILLS}
     {PROMPT_USER_SUMMARY_RATING}{dev_level}
     """
-    response = openai.chat.completions.create(
+    response = await client.chat.completions.create(
         model=GPT_MODEL,
         messages=[
             {"role": "system",
@@ -217,7 +199,7 @@ async def analyze_reduce(analysis_butch: list, dev_level: str, description: str)
     {PROMPT_USER_REDUCE_SOLUTIONS}\n{PROMPT_USER_REDUCE_SKILLS}
     {PROMPT_USER_REDUCE_RATING}{dev_level}
     """
-    response = openai.chat.completions.create(
+    response = await client.chat.completions.create(
         model=GPT_MODEL,
         messages=[
             {"role": "system",

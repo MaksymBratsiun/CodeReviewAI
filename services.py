@@ -8,21 +8,6 @@ import asyncio
 from config import GITHUB_ROOT, GITHUB_API_URL, BATCH_SIZE, VALID_EXTENSIONS
 from api_requests import analyze_summary, analyze_reduce, analyze_structure, analyze_file_content
 
-# GITHUB_ROOT = config.get("services", "github_root", fallback="https://github.com/")
-# GITHUB_API_URL = config.get("services", "github_api_url", fallback="https://api.github.com")
-# BATCH_SIZE = config.getint("services", "butch_size", fallback=7)
-
-# DEFAULT_VALID_EXTENSIONS = {".py", ".md", ".ini"}  # Default valid file extensions
-# try:
-#     VALID_EXTENSIONS = set(config.get("services", "valid_extensions").split(","))
-# except configparser.NoSectionError:
-#     logging.error("Config section 'services' not found in config.ini. Using default VALID_EXTENSIONS.")
-#     VALID_EXTENSIONS = DEFAULT_VALID_EXTENSIONS
-# except configparser.NoOptionError:
-#     logging.error("Option 'valid_extensions' not found in section 'services'. Using default VALID_EXTENSIONS.")
-#     VALID_EXTENSIONS = DEFAULT_VALID_EXTENSIONS
-
-
 logger = logging.getLogger(__name__)
 
 
